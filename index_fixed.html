@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#111827">
+<title>Roulette Tracker</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{max-width:900px;margin:auto;padding:16px}.top{padding:8px 2px 14px}.top h1{margin:0;font-size:28px}.top p{margin:5px 0;color:#6b7280}
+.card{background:#fff;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+textarea{width:100%;height:210px;border:1px solid #d1d5db;border-radius:12px;padding:12px;font:14px ui-monospace,SFMono-Regular,Menlo,monospace;outline:none}
+button{border:0;border-radius:12px;padding:12px 16px;margin:8px 6px 0 0;font-weight:700;font-size:15px}.add{background:#111827;color:#fff}.light{background:#e5e7eb}.red{background:#fee2e2;color:#991b1b}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.stat{background:#f3f4f6;border-radius:14px;padding:13px}.stat span{display:block;color:#6b7280;font-size:13px}.stat b{font-size:23px}
+.scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:620px}th,td{padding:9px;border-bottom:1px solid #e5e7eb;text-align:right}th:first-child,td:first-child{text-align:left}
+h2{font-size:20px;margin:4px 0 12px}.note{color:#6b7280;font-size:13px;line-height:1.45}.ok{color:#047857;font-weight:700}.warn{color:#b45309;font-weight:700}
+@media(max-width:600px){.stats{grid-template-columns:1fr 1fr}.stats .stat:last-child{grid-column:span 2}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><h1>Roulette Tracker</h1><p>Fresh dataset • Page-by-page • Bottom → Top</p></div>
+
+<div class="card">
+<h2>Paste Page</h2>
+<p class="note">Paste the complete ID + Winner page exactly as copied. The app reverses the page automatically so the bottom row is the first spin.</p>
+<textarea id="box" placeholder="ID    Winner
+176...    31
+176...    07"></textarea><br>
+<button class="add" id="add">ADD PAGE</button>
+<button class="light" id="preview">PREVIEW</button>
+<button class="red" id="reset">RESET</button>
+<div id="msg" class="note"></div>
+</div>
+
+<div class="card"><div class="stats">
+<div class="stat"><span>Results</span><b id="total">0</b></div>
+<div class="stat"><span>Pages</span><b id="pages">0</b></div>
+<div class="stat"><span>Expected / number</span><b>2.70%</b></div>
+</div></div>
+
+<div class="card"><h2>0–36 Running Count</h2>
+<div class="scroll"><table><thead><tr><th>Number</th><th>Count</th><th>%</th><th>Avg Gap</th><th>Max Gap</th></tr></thead><tbody id="tbody"></tbody></table></div></div>
+
+<div class="card"><h2>150 Gap → Next 20 Rounds</h2>
+<p class="note">Trigger when a number appears after 150+ missing results. Then test 1 unit on that same number for the next 20 complete rounds. Straight-up payout 35:1.</p>
+<button class="add" id="test">RUN 150 GAP TEST</button>
+<div id="testout" class="scroll"></div></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+const KEY="roulette_tracker_fresh_v2";
+let S={pages:[],seq:[]};
+try{S=JSON.parse(localStorage.getItem(KEY)||'{"pages":[],"seq":[]}')}catch(e){}
+const $=id=>document.getElementById(id);
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function parse(text){
+  const out=[];
+  for(const line of text.split(/\r?\n/)){
+    const t=line.trim();
+    if(!t || /^ID\b/i.test(t) || /^Winner\b/i.test(t)) continue;
+    const m=t.match(/(?:^|\s)(0{1,2}|[0-9]|[12][0-9]|3[0-6])\s*$/);
+    if(m){let n=Number(m[1]);if(n>=0&&n<=36)out.push(n);}
+  }
+  return out;
+}
+function gaps(seq,n){
+  const pos=[];for(let i=0;i<seq.length;i++)if(seq[i]===n)pos.push(i);
+  if(pos.length<2)return {avg:"—",max:"—"};
+  const gs=[];for(let i=1;i<pos.length;i++)gs.push(pos[i]-pos[i-1]-1);
+  return {avg:(gs.reduce((a,b)=>a+b,0)/gs.length).toFixed(2),max:Math.max(...gs)};
+}
+function render(){
+  const seq=S.seq,total=seq.length;
+  $("total").textContent=total;$("pages").textContent=S.pages.length;
+  let html="";
+  for(let n=0;n<=36;n++){
+    const c=seq.filter(x=>x===n).length,p=total?c/total*100:0,g=gaps(seq,n);
+    html+=`<tr><td>${n}</td><td>${c}</td><td>${p.toFixed(2)}%</td><td>${g.avg}</td><td>${g.max}</td></tr>`;
+  }
+  $("tbody").innerHTML=html;
+}
+$("add").onclick=function(){
+  const raw=$("box").value, rows=parse(raw);
+  if(!rows.length){$("msg").innerHTML='<span class="warn">Winner numbers नहीं मिले. पूरा ID + Winner data paste करें.</span>';return;}
+  const seq=rows.slice().reverse();
+  S.pages.push(rows.length);S.seq.push(...seq);save();render();$("box").value="";
+  $("msg").innerHTML=`<span class="ok">Added ${rows.length} results. Total = ${S.seq.length}. Bottom → Top applied.</span>`;
+};
+$("preview").onclick=function(){
+  const rows=parse($("box").value);
+  if(!rows.length){$("msg").textContent="No Winner numbers found.";return;}
+  const s=rows.slice().reverse();
+  $("msg").textContent="Sequence preview: "+s.slice(0,25).join(", ")+(s.length>25?" …":"");
+};
+$("reset").onclick=function(){
+  if(confirm("Reset this fresh dataset?")){S={pages:[],seq:[]};save();render();$("testout").innerHTML="";$("msg").textContent="Fresh dataset reset.";}
+};
+$("test").onclick=function(){
+  const seq=S.seq, triggers=[], last=Array(37).fill(null), GAP=150, N=20;
+  for(let i=0;i<seq.length;i++){
+    const n=seq[i];
+    if(last[n]!==null){
+      const gap=i-last[n]-1;
+      if(gap>=GAP){
+        const available=seq.length-i-1;
+        if(available>=N){
+          const window=seq.slice(i+1,i+1+N);
+          const hits=window.filter(x=>x===n).length;
+          triggers.push({n,gap,pos:i+1,hits,pnl:hits*36-N});
+        }
+      }
+    }
+    last[n]=i;
+  }
+  let stake=triggers.length*N,pnl=triggers.reduce((a,t)=>a+t.pnl,0);
+  let h=`<p><b>Triggers:</b> ${triggers.length} &nbsp; <b>Bets:</b> ${stake} &nbsp; <b>Hits:</b> ${triggers.reduce((a,t)=>a+t.hits,0)} &nbsp; <b>Net:</b> ${pnl>=0?"+":""}${pnl} units &nbsp; <b>ROI:</b> ${stake?(pnl/stake*100).toFixed(2):"0.00"}%</p>`;
+  if(!triggers.length)h+="<p class='note'>No complete 150+ gap triggers yet.</p>";
+  else{h+='<table><thead><tr><th>Number</th><th>Gap</th><th>Trigger Pos.</th><th>Hits / 20</th><th>P/L</th></tr></thead><tbody>';
+  for(const t of triggers)h+=`<tr><td>${t.n}</td><td>${t.gap}</td><td>${t.pos}</td><td>${t.hits}</td><td>${t.pnl>=0?"+":""}${t.pnl}</td></tr>`;
+  h+="</tbody></table>";}
+  $("testout").innerHTML=h;
+};
+render();
+})();
+</script>
+</body>
+</html>
